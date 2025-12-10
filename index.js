@@ -56,7 +56,7 @@ async function run() {
     const db = client.db("G-Flow");
     const garmentCollection = db.collection("All_Products");
     const userCollection = db.collection("user");
-    const buyerCollection = db.collection("Sale-products");
+    // const buyerCollection = db.collection("Sale-products");
 
     // ##### Verify Admin ###################
     const verifyAdmin = async (req, res, next) => {
