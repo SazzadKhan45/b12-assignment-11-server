@@ -84,7 +84,7 @@ async function run() {
     // ############ garmentCollection Api List ################
 
     // Product add to post Api
-    app.post("/products", async (req, res) => {
+    app.post("/single-product", async (req, res) => {
       try {
         const product = req.body;
         const result = await garmentCollection.insertOne(product);
