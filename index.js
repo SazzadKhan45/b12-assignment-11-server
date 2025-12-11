@@ -233,6 +233,55 @@ async function run() {
       }
     });
 
+    // User status update Api
+    app.patch("/user-update/:id", async (req, res) => {
+      try {
+        const id = req.params;
+        const query = { _id: new ObjectId(id) };
+
+        // update info
+        const updateStatus = {
+          $set: { status: "approved" },
+        };
+
+        const result = await userCollection.updateOne(query, updateStatus);
+
+        //
+        res
+          .status(200)
+          .send({ message: "Update Status Successfully", data: result });
+
+        //
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    // User delete Api
+    app.delete("/user/:id", async (req, res) => {
+      try {
+        const id = req.params;
+
+        const query = { _id: new ObjectId(id) };
+        const result = await userCollection.deleteOne(query);
+
+        //Check user is null
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Product not found" });
+        }
+
+        //
+        res.send({
+          message: "Product deleted successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
     // ###### Admin Related all Api ##################
 
     // All product table api
@@ -256,7 +305,10 @@ async function run() {
         }
 
         // If user role Admin
-        const result = await garmentCollection.find().toArray();
+        const result = await garmentCollection
+          .find()
+          .sort({ createdAt: -1 })
+          .toArray();
 
         res.send({
           message: "Admin access granted",
@@ -287,6 +339,30 @@ async function run() {
         });
       } catch (error) {
         console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    //  ##### Manager role Api
+    app.get("/manager-product", async (req, res) => {
+      try {
+        const email = req.query.email;
+
+        if (!email) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        //
+        const query = { supplierEmail: email };
+        const result = await garmentCollection.find(query).toArray();
+
+        //
+        res
+          .status(200)
+          .send({ message: "Manager product get successfully", data: result });
+        //
+      } catch (error) {
+        console.log("ERR:", error);
         res.status(500).send({ message: "Server Error" });
       }
     });
