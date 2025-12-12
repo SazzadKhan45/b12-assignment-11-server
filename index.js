@@ -1,8 +1,9 @@
 const express = require("express");
-const cors = require("cors");
-require("dotenv").config();
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
 const admin = require("firebase-admin");
+const { customAlphabet } = require("nanoid");
+const cors = require("cors");
+require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 3000;
 
@@ -56,7 +57,7 @@ async function run() {
     const db = client.db("G-Flow");
     const garmentCollection = db.collection("All_Products");
     const userCollection = db.collection("user");
-    // const buyerCollection = db.collection("Sale-products");
+    const buyerCollection = db.collection("Sale-products");
 
     // ##### Verify Admin ###################
     const verifyAdmin = async (req, res, next) => {
@@ -364,6 +365,270 @@ async function run() {
       } catch (error) {
         console.log("ERR:", error);
         res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    // ####### Buyer role related Api #######################
+    app.post("/buyer-order", async (req, res) => {
+      try {
+        const chars =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const generateRandom = customAlphabet(chars, 8);
+
+        let trackingId;
+
+        // Ensure tracking ID is unique inside the database
+        do {
+          trackingId = "GFW-" + generateRandom();
+        } while (await buyerCollection.findOne({ trackingId }));
+
+        const newOrder = {
+          ...req.body,
+          trackingId,
+          createdAt: new Date(),
+          orderStatus: "pending",
+        };
+
+        // Insert order into DB
+        const result = await buyerCollection.insertOne(newOrder);
+
+        // Send success response
+        res.status(201).json({
+          success: true,
+          message: "Order placed successfully",
+          trackingId,
+          orderId: result.insertedId,
+        });
+      } catch (error) {
+        console.error("Error creating order:", error);
+        res.status(500).json({
+          success: false,
+          message: "Internal server error",
+        });
+      }
+    });
+
+    // #############  Get order by email Admin ############
+    app.get("/all-order-admin", async (req, res) => {
+      const email = req.query.email;
+      console.log(email);
+
+      if (!email) {
+        return res.status(400).send({ message: "Email not found" });
+      }
+
+      try {
+        // FIX #1: Use findOne + await
+        const user = await userCollection.findOne({ email: email });
+
+        // FIX #2: Check if user exists
+        if (!user) {
+          return res.status(400).send({ message: "User not found" });
+        }
+
+        // FIX #3: Check role
+        if (user.role !== "Admin") {
+          return res
+            .status(403)
+            .send({ message: "Access denied. Admin only." });
+        }
+
+        // If admin → return all orders
+        const result = await buyerCollection
+          .find()
+          .sort({ createdAt: -1 }) // NEWEST first
+          .toArray();
+
+        res.send({ message: "Successfully", data: result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
+    // Delete order by admin Api
+    app.delete("/order/:id", async (req, res) => {
+      try {
+        const id = req.params;
+
+        const query = { _id: new ObjectId(id) };
+
+        const result = await buyerCollection.deleteOne(query);
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Product not found" });
+        }
+
+        res.send({
+          message: "Product deleted successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    // ####### Get order by email manager
+    app.get("/all-order-manager", async (req, res) => {
+      const email = req.query.email;
+
+      if (!email) {
+        return res.status(400).send({ message: "Email not found" });
+      }
+
+      try {
+        // FIX #1: Use findOne + await
+        const user = await userCollection.findOne({ email: email });
+
+        // FIX #2: Check if user exists
+        if (!user) {
+          return res.status(400).send({ message: "User not found" });
+        }
+
+        // FIX #3: Check role
+        if (user.role !== "manager") {
+          return res
+            .status(403)
+            .send({ message: "Access denied. Manager only." });
+        }
+
+        //
+        const query = { supplierEmail: email };
+
+        // If admin → return all orders
+        const result = await buyerCollection
+          .find(query)
+          .sort({ createdAt: -1 }) // NEWEST first
+          .toArray();
+
+        res.send({ message: "Successfully", data: result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
+    // Order Approved api
+    app.patch("/order-approve/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "approved",
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Server Error" });
+      }
+    });
+
+    // Order rejected api
+    app.patch("/order-reject/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "rejected",
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Server Error" });
+      }
+    });
+
+    // ##### Buyer Role Api list ##########
+
+    // Buyer order Api
+    app.get("/all-buyer-order", async (req, res) => {
+      const email = req.query.email;
+
+      if (!email) {
+        return res.status(400).send({ message: "Email not found" });
+      }
+
+      try {
+        // Step-1: User check with correct field
+        const user = await userCollection.findOne({ email: email });
+
+        // Step-2: User exists?
+        if (!user) {
+          return res.status(400).send({ message: "User not found" });
+        }
+
+        // Step-3: Role check
+        if (user.role !== "buyer") {
+          return res.status(403).send({
+            message: "Access denied. Buyer only.",
+          });
+        }
+
+        // Step-4: Fetch buyer orders
+        const result = await buyerCollection
+          .find({ buyerEmail: email })
+          .sort({ createdAt: -1 })
+          .toArray();
+
+        res.send({ message: "Successfully", data: result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
+    // Order cancel by buyer Api
+    app.patch("/order-cancel/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "cancel",
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
       }
     });
 
