@@ -157,7 +157,7 @@ async function run() {
       }
     });
 
-    // Get product bt id Api
+    // Get product by id Api
     app.get("/product/:id", async (req, res) => {
       try {
         const id = req.params;
@@ -637,7 +637,7 @@ async function run() {
       console.log(`Example app listening on port ${port}`);
     });
   } finally {
-    // await client.close();
+    console.log("Server working Successfully");
   }
 }
 run().catch(console.dir);
