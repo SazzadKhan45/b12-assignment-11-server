@@ -1,38 +1,52 @@
 const express = require("express");
 const { MongoClient, ServerApiVersion, ObjectId } = require("mongodb");
+require("dotenv").config();
 const admin = require("firebase-admin");
 const { customAlphabet } = require("nanoid");
 const cors = require("cors");
-require("dotenv").config();
 const app = express();
 const port = process.env.PORT || 3000;
 
 // Firebase Admin Sdk
-const serviceAccount = require("./appsauth-firebase-adminsdk.json");
-
-admin.initializeApp({
-  credential: admin.credential.cert(serviceAccount),
-});
+// const serviceAccount = require("./appsauth-firebase-adminsdk.json");
 
 // Middleware
 app.use(express.json());
 app.use(cors());
 
+// Env to Firebase Admin SDK
+const decoded = Buffer.from(process.env.FB_SERVICE_KEY, "base64").toString(
+  "utf8"
+);
+const serviceAccount = JSON.parse(decoded);
+
+admin.initializeApp({
+  credential: admin.credential.cert(serviceAccount),
+});
+
 // Firebase Admin verify by accessToken
+
 const verifyFirebaseToken = async (req, res, next) => {
-  //
-  const userAccessToken = req.headers.authorization;
-  //
-  if (!userAccessToken) {
-    return res.status(401).send({ message: "Unauthorized access" });
-  }
-  //
   try {
-    const token = userAccessToken.split(" ")[1];
+    const authHeader = req.headers.authorization;
+
+    // Debug (remove later)
+    console.log("Authorization Header:", authHeader);
+
+    if (!authHeader || !authHeader.startsWith("Bearer ")) {
+      return res.status(401).send({ message: "Unauthorized access" });
+    }
+
+    const token = authHeader.split(" ")[1];
+
     const decoded = await admin.auth().verifyIdToken(token);
+
+    req.user = decoded; // store full decoded token
     req.decoded_email = decoded.email;
+
     next();
   } catch (error) {
+    console.error("Firebase token error:", error.message);
     return res.status(401).send({ message: "Unauthorized access" });
   }
 };
@@ -52,40 +66,17 @@ const client = new MongoClient(uri, {
 async function run() {
   try {
     // Connect the client to the server
-    await client.connect();
+    // await client.connect();
 
     const db = client.db("G-Flow");
     const garmentCollection = db.collection("All_Products");
     const userCollection = db.collection("user");
     const buyerCollection = db.collection("Sale-products");
 
-    // ##### Verify Admin ###################
-    const verifyAdmin = async (req, res, next) => {
-      try {
-        const email = req.user?.email;
-
-        if (!email) {
-          return res
-            .status(401)
-            .send({ message: "Unauthorized: Missing user email" });
-        }
-
-        const user = await userCollection.findOne({ email });
-
-        if (!user || user.role !== "Admin") {
-          return res.status(403).send({ message: "Forbidden: Admin only" });
-        }
-
-        next();
-      } catch (err) {
-        res.status(500).send({ message: "Server Error", err });
-      }
-    };
-
     // ############ garmentCollection Api List ################
 
     // Product add to post Api
-    app.post("/single-product", async (req, res) => {
+    app.post("/single-product", verifyFirebaseToken, async (req, res) => {
       try {
         const product = req.body;
         const result = await garmentCollection.insertOne(product);
@@ -182,7 +173,7 @@ async function run() {
 
     // ############ User Collection Api List ###############
     // User Collection save to post Api
-    app.post("/userList", async (req, res) => {
+    app.post("/userList", verifyFirebaseToken, async (req, res) => {
       try {
         const userData = req.body;
 
@@ -223,8 +214,9 @@ async function run() {
       }
     });
 
+    // ########## Admin relate api
     //  User collection get Api
-    app.get("/all-users", async (req, res) => {
+    app.get("/all-users", verifyFirebaseToken, async (req, res) => {
       try {
         //
         const result = await userCollection.find().toArray();
@@ -235,7 +227,7 @@ async function run() {
     });
 
     // User status update Api
-    app.patch("/user-update/:id", async (req, res) => {
+    app.patch("/user-update/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params;
         const query = { _id: new ObjectId(id) };
@@ -260,7 +252,7 @@ async function run() {
     });
 
     // User delete Api
-    app.delete("/user/:id", async (req, res) => {
+    app.delete("/user/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params;
 
@@ -286,7 +278,7 @@ async function run() {
     // ###### Admin Related all Api ##################
 
     // All product table api
-    app.get("/all-product-data", async (req, res) => {
+    app.get("/all-product-data", verifyFirebaseToken, async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -322,7 +314,7 @@ async function run() {
     });
 
     // DashBoard product delete Api
-    app.delete("/product/:id", async (req, res) => {
+    app.delete("/product/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params;
 
@@ -345,7 +337,7 @@ async function run() {
     });
 
     //  ##### Manager role Api
-    app.get("/manager-product", async (req, res) => {
+    app.get("/manager-product", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.query.email;
 
@@ -369,7 +361,7 @@ async function run() {
     });
 
     // ####### Buyer role related Api #######################
-    app.post("/buyer-order", async (req, res) => {
+    app.post("/buyer-order", verifyFirebaseToken, async (req, res) => {
       try {
         const chars =
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -409,7 +401,7 @@ async function run() {
     });
 
     // #############  Get order by email Admin ############
-    app.get("/all-order-admin", async (req, res) => {
+    app.get("/all-order-admin", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
       console.log(email);
 
@@ -447,7 +439,7 @@ async function run() {
     });
 
     // Delete order by admin Api
-    app.delete("/order/:id", async (req, res) => {
+    app.delete("/order/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params;
 
@@ -470,7 +462,7 @@ async function run() {
     });
 
     // ####### Get order by email manager
-    app.get("/all-order-manager", async (req, res) => {
+    app.get("/all-order-manager", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
 
       if (!email) {
@@ -510,7 +502,7 @@ async function run() {
     });
 
     // Order Approved api
-    app.patch("/order-approve/:id", async (req, res) => {
+    app.patch("/order-approve/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params;
 
       try {
@@ -538,7 +530,7 @@ async function run() {
     });
 
     // Order rejected api
-    app.patch("/order-reject/:id", async (req, res) => {
+    app.patch("/order-reject/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params;
 
       try {
@@ -568,7 +560,7 @@ async function run() {
     // ##### Buyer Role Api list ##########
 
     // Buyer order Api
-    app.get("/all-buyer-order", async (req, res) => {
+    app.get("/all-buyer-order", verifyFirebaseToken, async (req, res) => {
       const email = req.query.email;
 
       if (!email) {
@@ -605,7 +597,7 @@ async function run() {
     });
 
     // Order cancel by buyer Api
-    app.patch("/order-cancel/:id", async (req, res) => {
+    app.patch("/order-cancel/:id", verifyFirebaseToken, async (req, res) => {
       const id = req.params;
 
       try {

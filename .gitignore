@@ -1,3 +1,4 @@
 node_modules
 .env
 appsauth-firebase-adminsdk.json
+.vercel
