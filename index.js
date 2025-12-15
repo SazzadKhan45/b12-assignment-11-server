@@ -226,7 +226,7 @@ async function run() {
       }
     });
 
-    // User status update Api
+    // User status update Api by admin
     app.patch("/user-update/:id", verifyFirebaseToken, async (req, res) => {
       try {
         const id = req.params;
