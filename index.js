@@ -38,7 +38,7 @@ const verifyFirebaseToken = async (req, res, next) => {
     const idToken = token.split(" ")[1];
     const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
-    console.log(decoded);
+    // console.log(decoded);
 
     next();
   } catch (error) {
@@ -167,6 +167,30 @@ async function run() {
           message: "Failed to fetch products data",
           error: error.message,
         });
+      }
+    });
+
+    // Update createAt
+    app.patch("/product/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update field
+        const updateTime = {
+          $set: { createdAt: new Date() },
+        };
+
+        const result = await garmentCollection.updateOne(query, updateTime);
+
+        //
+        res
+          .status(200)
+          .send({ message: "Update Status Successfully", data: result });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
       }
     });
 
