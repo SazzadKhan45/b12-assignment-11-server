@@ -27,22 +27,18 @@ admin.initializeApp({
 // Firebase Admin verify by accessToken
 
 const verifyFirebaseToken = async (req, res, next) => {
+  const token = req.headers.authorization;
+  // console.log(token);
+
+  if (!token) {
+    return res.status(401).send({ message: "Unauthorized Access" });
+  }
+
   try {
-    const authHeader = req.headers.authorization;
-
-    // Debug (remove later)
-    console.log("Authorization Header:", authHeader);
-
-    if (!authHeader || !authHeader.startsWith("Bearer ")) {
-      return res.status(401).send({ message: "Unauthorized access" });
-    }
-
-    const token = authHeader.split(" ")[1];
-
-    const decoded = await admin.auth().verifyIdToken(token);
-
-    req.user = decoded; // store full decoded token
+    const idToken = token.split(" ")[1];
+    const decoded = await admin.auth().verifyIdToken(idToken);
     req.decoded_email = decoded.email;
+    console.log(decoded);
 
     next();
   } catch (error) {
@@ -68,15 +64,18 @@ async function run() {
     // Connect the client to the server
     // await client.connect();
 
+    // All Database collection here
     const db = client.db("G-Flow");
     const garmentCollection = db.collection("All_Products");
     const userCollection = db.collection("user");
     const buyerCollection = db.collection("Sale-products");
 
+    //
+
     // ############ garmentCollection Api List ################
 
     // Product add to post Api
-    app.post("/single-product", verifyFirebaseToken, async (req, res) => {
+    app.post("/single-product", async (req, res) => {
       try {
         const product = req.body;
         const result = await garmentCollection.insertOne(product);
@@ -171,9 +170,12 @@ async function run() {
       }
     });
 
-    // ############ User Collection Api List ###############
+    // ###### Admin Related all Api Start Here ###########
+
+    // User collection Api Start here #########
+
     // User Collection save to post Api
-    app.post("/userList", verifyFirebaseToken, async (req, res) => {
+    app.post("/userList", async (req, res) => {
       try {
         const userData = req.body;
 
@@ -214,11 +216,9 @@ async function run() {
       }
     });
 
-    // ########## Admin relate api ####
-    //  User collection get Api
-    app.get("/all-users", verifyFirebaseToken, async (req, res) => {
+    // Get all user Api
+    app.get("/all-users", async (req, res) => {
       try {
-        //
         const result = await userCollection.find().toArray();
         res.send(result);
       } catch (error) {
@@ -227,7 +227,7 @@ async function run() {
     });
 
     // User status update Api by admin
-    app.patch("/user-update/:id", verifyFirebaseToken, async (req, res) => {
+    app.patch("/user-update/:id", async (req, res) => {
       try {
         const id = req.params;
         const query = { _id: new ObjectId(id) };
@@ -252,7 +252,7 @@ async function run() {
     });
 
     // User delete Api
-    app.delete("/user/:id", verifyFirebaseToken, async (req, res) => {
+    app.delete("/user/:id", async (req, res) => {
       try {
         const id = req.params;
 
@@ -275,10 +275,10 @@ async function run() {
       }
     });
 
-    // ###### Admin Related all Api ##################
+    // DashBoard All Api start here #########
 
     // All product table api
-    app.get("/all-product-data", verifyFirebaseToken, async (req, res) => {
+    app.get("/all-product-data", async (req, res) => {
       try {
         const { email } = req.query;
 
@@ -314,7 +314,7 @@ async function run() {
     });
 
     // DashBoard product delete Api
-    app.delete("/product/:id", verifyFirebaseToken, async (req, res) => {
+    app.delete("/product/:id", async (req, res) => {
       try {
         const id = req.params;
 
@@ -336,13 +336,105 @@ async function run() {
       }
     });
 
-    //  ##### Manager role Api
+    // All Order Admin api
+    app.get("/all-order-admin", async (req, res) => {
+      const email = req.query.email;
+      console.log(email);
+
+      if (!email) {
+        return res.status(400).send({ message: "Email not found" });
+      }
+
+      try {
+        // FIX #1: Use findOne + await
+        const user = await userCollection.findOne({ email: email });
+
+        // FIX #2: Check if user exists
+        if (!user) {
+          return res.status(400).send({ message: "User not found" });
+        }
+
+        // FIX #3: Check role
+        if (user.role !== "Admin") {
+          return res
+            .status(403)
+            .send({ message: "Access denied. Admin only." });
+        }
+
+        // If admin → return all orders
+        const result = await buyerCollection
+          .find()
+          .sort({ createdAt: -1 }) // NEWEST first
+          .toArray();
+
+        res.send({ message: "Successfully", data: result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+    app.get("/admin-info", verifyFirebaseToken, async (req, res) => {
+      try {
+        const managerEmail = req.query.email;
+
+        if (!managerEmail) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const query = { email: managerEmail };
+        const result = await userCollection.findOne(query);
+
+        if (!result) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.status(200).send({
+          message: "Manager info fetched successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log("ERR:", error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    // Delete order by admin Api
+    app.delete("/order/:id", async (req, res) => {
+      try {
+        const id = req.params;
+
+        const query = { _id: new ObjectId(id) };
+
+        const result = await buyerCollection.deleteOne(query);
+
+        if (result.deletedCount === 0) {
+          return res.status(404).send({ message: "Product not found" });
+        }
+
+        res.send({
+          message: "Product deleted successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    //  ##### Manager role Api ########  Start Here
+
+    //  get manager product api
     app.get("/manager-product", verifyFirebaseToken, async (req, res) => {
       try {
         const email = req.query.email;
 
         if (!email) {
           return res.status(400).send({ message: "Email is required" });
+        }
+
+        // Verify token
+        if (email !== req.decoded_email) {
+          return res.status(403).send({ message: "Forbidden Access" });
         }
 
         //
@@ -360,8 +452,137 @@ async function run() {
       }
     });
 
+    // Manager all order Api
+    app.get("/all-order-manager", verifyFirebaseToken, async (req, res) => {
+      const email = req.query.email;
+
+      if (!email) {
+        return res.status(400).send({ message: "Email not found" });
+      }
+
+      // Verify user Token
+      if (email !== req.decoded_email) {
+        return res.status(403).send({ message: "Forbidden Access" });
+      }
+
+      try {
+        // FIX #1: Use findOne + await
+        const user = await userCollection.findOne({ email: email });
+
+        // FIX #2: Check if user exists
+        if (!user) {
+          return res.status(400).send({ message: "User not found" });
+        }
+
+        // FIX #3: Check role
+        if (user.role !== "manager") {
+          return res
+            .status(403)
+            .send({ message: "Access denied. Manager only." });
+        }
+
+        //
+        const query = { supplierEmail: email };
+
+        // If admin → return all orders
+        const result = await buyerCollection
+          .find(query)
+          .sort({ createdAt: -1 }) // NEWEST first
+          .toArray();
+
+        res.send({ message: "Successfully", data: result });
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
+    // Order Approved api
+    app.patch("/order-approve/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "approved",
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Server Error" });
+      }
+    });
+
+    // Order rejected api
+    app.patch("/order-reject/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "rejected",
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Server Error" });
+      }
+    });
+
+    // Manager info Api
+    app.get("/manager-info", verifyFirebaseToken, async (req, res) => {
+      try {
+        const managerEmail = req.query.email;
+
+        if (!managerEmail) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const query = { email: managerEmail };
+        const result = await userCollection.findOne(query);
+
+        if (!result) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.status(200).send({
+          message: "Manager info fetched successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log("ERR:", error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
     // ####### Buyer role related Api #######################
-    app.post("/buyer-order", verifyFirebaseToken, async (req, res) => {
+
+    // Buyer order post Api
+    app.post("/buyer-order", async (req, res) => {
       try {
         const chars =
           "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
@@ -400,167 +621,8 @@ async function run() {
       }
     });
 
-    // #############  Get order by email Admin ############
-    app.get("/all-order-admin", verifyFirebaseToken, async (req, res) => {
-      const email = req.query.email;
-      console.log(email);
-
-      if (!email) {
-        return res.status(400).send({ message: "Email not found" });
-      }
-
-      try {
-        // FIX #1: Use findOne + await
-        const user = await userCollection.findOne({ email: email });
-
-        // FIX #2: Check if user exists
-        if (!user) {
-          return res.status(400).send({ message: "User not found" });
-        }
-
-        // FIX #3: Check role
-        if (user.role !== "Admin") {
-          return res
-            .status(403)
-            .send({ message: "Access denied. Admin only." });
-        }
-
-        // If admin → return all orders
-        const result = await buyerCollection
-          .find()
-          .sort({ createdAt: -1 }) // NEWEST first
-          .toArray();
-
-        res.send({ message: "Successfully", data: result });
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: "Server Error", error });
-      }
-    });
-
-    // Delete order by admin Api
-    app.delete("/order/:id", verifyFirebaseToken, async (req, res) => {
-      try {
-        const id = req.params;
-
-        const query = { _id: new ObjectId(id) };
-
-        const result = await buyerCollection.deleteOne(query);
-
-        if (result.deletedCount === 0) {
-          return res.status(404).send({ message: "Product not found" });
-        }
-
-        res.send({
-          message: "Product deleted successfully",
-          data: result,
-        });
-      } catch (error) {
-        console.log(error);
-        res.status(500).send({ message: "Server Error" });
-      }
-    });
-
-    // ####### Get order by email manager
-    app.get("/all-order-manager", verifyFirebaseToken, async (req, res) => {
-      const email = req.query.email;
-
-      if (!email) {
-        return res.status(400).send({ message: "Email not found" });
-      }
-
-      try {
-        // FIX #1: Use findOne + await
-        const user = await userCollection.findOne({ email: email });
-
-        // FIX #2: Check if user exists
-        if (!user) {
-          return res.status(400).send({ message: "User not found" });
-        }
-
-        // FIX #3: Check role
-        if (user.role !== "manager") {
-          return res
-            .status(403)
-            .send({ message: "Access denied. Manager only." });
-        }
-
-        //
-        const query = { supplierEmail: email };
-
-        // If admin → return all orders
-        const result = await buyerCollection
-          .find(query)
-          .sort({ createdAt: -1 }) // NEWEST first
-          .toArray();
-
-        res.send({ message: "Successfully", data: result });
-      } catch (error) {
-        console.error(error);
-        res.status(500).send({ message: "Server Error", error });
-      }
-    });
-
-    // Order Approved api
-    app.patch("/order-approve/:id", verifyFirebaseToken, async (req, res) => {
-      const id = req.params;
-
-      try {
-        const query = { _id: new ObjectId(id) };
-
-        // Update
-        const updateData = {
-          $set: {
-            orderStatus: "approved",
-          },
-        };
-
-        const result = await buyerCollection.updateOne(query, updateData);
-
-        //
-        res.status(200).send({
-          message: "Successfully Updated",
-          success: true,
-          data: result,
-        });
-      } catch (error) {
-        console.log(error);
-        res.send({ message: "Server Error" });
-      }
-    });
-
-    // Order rejected api
-    app.patch("/order-reject/:id", verifyFirebaseToken, async (req, res) => {
-      const id = req.params;
-
-      try {
-        const query = { _id: new ObjectId(id) };
-
-        // Update
-        const updateData = {
-          $set: {
-            orderStatus: "rejected",
-          },
-        };
-
-        const result = await buyerCollection.updateOne(query, updateData);
-
-        //
-        res.status(200).send({
-          message: "Successfully Updated",
-          success: true,
-          data: result,
-        });
-      } catch (error) {
-        console.log(error);
-        res.send({ message: "Server Error" });
-      }
-    });
-
-    // ##### Buyer Role Api list ##########
-
     // Buyer order Api
-    app.get("/all-buyer-order", verifyFirebaseToken, async (req, res) => {
+    app.get("/all-buyer-order", async (req, res) => {
       const email = req.query.email;
 
       if (!email) {
@@ -597,7 +659,7 @@ async function run() {
     });
 
     // Order cancel by buyer Api
-    app.patch("/order-cancel/:id", verifyFirebaseToken, async (req, res) => {
+    app.patch("/order-cancel/:id", async (req, res) => {
       const id = req.params;
 
       try {
@@ -621,6 +683,31 @@ async function run() {
       } catch (error) {
         console.error(error);
         res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
+    app.get("/buyer-info", verifyFirebaseToken, async (req, res) => {
+      try {
+        const managerEmail = req.query.email;
+
+        if (!managerEmail) {
+          return res.status(400).send({ message: "Email is required" });
+        }
+
+        const query = { email: managerEmail };
+        const result = await userCollection.findOne(query);
+
+        if (!result) {
+          return res.status(404).send({ message: "User not found" });
+        }
+
+        res.status(200).send({
+          message: "Manager info fetched successfully",
+          data: result,
+        });
+      } catch (error) {
+        console.log("ERR:", error);
+        res.status(500).send({ message: "Server Error" });
       }
     });
 
