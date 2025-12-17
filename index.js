@@ -682,6 +682,32 @@ async function run() {
       }
     });
 
+    // get one order by id Api
+    app.get("/single-order/:id", async (req, res) => {
+      const id = req.params;
+
+      //
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        const result = await buyerCollection.findOne(query);
+
+        //
+        res
+          .status(200)
+          .send({
+            message: "Successfully Fetch Order",
+            success: true,
+            data: result,
+          });
+
+        //
+      } catch (error) {
+        console.error(error);
+        res.status(500).send({ message: "Server Error", error });
+      }
+    });
+
     // Order cancel by buyer Api
     app.patch("/order-cancel/:id", async (req, res) => {
       const id = req.params;
@@ -762,7 +788,17 @@ async function run() {
           ],
           mode: "payment",
           customer_email: paymentInfo.buyerEmail,
-          metadata: { parcelId: paymentInfo.productId },
+          metadata: {
+            parcelId: paymentInfo.productId,
+            images: paymentInfo.images,
+            productName: paymentInfo.productName,
+            category: paymentInfo.category,
+            supplierEmail: paymentInfo.supplierEmail,
+            Quantity: paymentInfo.Quantity,
+            contact: paymentInfo.contact,
+            name: paymentInfo.name,
+            paymentOptions: paymentInfo.paymentOptions,
+          },
           success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
           cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
         });
@@ -773,6 +809,64 @@ async function run() {
       } catch (error) {
         console.log(error);
         res.status(500).send({ error: error.message });
+      }
+    });
+
+    // Order info save database
+    app.post("/save-order", async (req, res) => {
+      try {
+        const chars =
+          "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+        const generateRandom = customAlphabet(chars, 8);
+
+        let trackingId;
+        do {
+          trackingId = "GFW-" + generateRandom();
+        } while (await buyerCollection.findOne({ trackingId }));
+
+        const { sessionId } = req.body;
+
+        if (!sessionId) {
+          return res.status(400).json({ message: "Session ID missing" });
+        }
+
+        const session = await stripe.checkout.sessions.retrieve(sessionId);
+
+        if (session.payment_status !== "paid") {
+          return res.status(400).json({ message: "Payment not completed" });
+        }
+
+        const order = {
+          sessionId: session.id,
+          buyerEmail: session.customer_details?.email,
+          price: session.amount_total / 100,
+          currency: session.currency,
+          paymentIntent: session.payment_intent,
+          status: session.payment_status,
+          orderStatus: "pending",
+          createdAt: new Date(),
+          trackingId,
+          productName: session.metadata.productName,
+          parcelId: session.metadata.parcelId,
+          images: session.metadata.images,
+          name: session.metadata.name,
+          supplierEmail: session.metadata.supplierEmail,
+          Quantity: session.metadata.Quantity,
+          contact: session.metadata.contact,
+          paymentOptions: session.metadata.paymentOptions,
+        };
+
+        await buyerCollection.insertOne(order);
+
+        res.status(200).json({ message: "Order saved successfully" });
+      } catch (error) {
+        // Handle duplicate insert safely
+        if (error.code === 11000) {
+          return res.status(200).json({ message: "Order already saved" });
+        }
+
+        console.error("Order Save Error:", error);
+        res.status(500).json({ error: "Order saving failed" });
       }
     });
 
