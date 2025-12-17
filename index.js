@@ -5,10 +5,10 @@ const admin = require("firebase-admin");
 const { customAlphabet } = require("nanoid");
 const cors = require("cors");
 const app = express();
+const stripe = require("stripe")(process.env.STRIPE_PAYMENT_KEY);
 const port = process.env.PORT || 3000;
 
 // Firebase Admin Sdk
-// const serviceAccount = require("./appsauth-firebase-adminsdk.json");
 
 // Middleware
 app.use(express.json());
@@ -732,6 +732,47 @@ async function run() {
       } catch (error) {
         console.log("ERR:", error);
         res.status(500).send({ message: "Server Error" });
+      }
+    });
+
+    // #####   Stripe Payments Api #####
+
+    app.post("/payment-checkout", async (req, res) => {
+      try {
+        const paymentInfo = req.body;
+
+        // Validate cost
+        const totalCost = Number(paymentInfo.cost) * 100;
+        if (isNaN(totalCost)) {
+          return res.status(400).send({ error: "Invalid parcel cost" });
+        }
+
+        const session = await stripe.checkout.sessions.create({
+          line_items: [
+            {
+              price_data: {
+                currency: "usd",
+                unit_amount: totalCost,
+                product_data: {
+                  name: `Please pay for : ${paymentInfo.productName}`,
+                },
+              },
+              quantity: 1,
+            },
+          ],
+          mode: "payment",
+          customer_email: paymentInfo.buyerEmail,
+          metadata: { parcelId: paymentInfo.productId },
+          success_url: `${process.env.SITE_DOMAIN}/dashboard/payment-success?session_id={CHECKOUT_SESSION_ID}`,
+          cancel_url: `${process.env.SITE_DOMAIN}/dashboard/payment-cancel`,
+        });
+
+        // Send URL to frontend
+        return res.send({ url: session.url });
+        //
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ error: error.message });
       }
     });
 
