@@ -275,6 +275,31 @@ async function run() {
       }
     });
 
+    // User status suspend Api by admin
+    app.patch("/user-suspend/:id", async (req, res) => {
+      try {
+        const id = req.params;
+        const query = { _id: new ObjectId(id) };
+
+        // update info
+        const updateStatus = {
+          $set: { status: "suspend" },
+        };
+
+        const result = await userCollection.updateOne(query, updateStatus);
+
+        //
+        res
+          .status(200)
+          .send({ message: "Update Status Successfully", data: result });
+
+        //
+      } catch (error) {
+        console.log(error);
+        res.status(500).send({ message: "Server Error" });
+      }
+    });
+
     // User delete Api
     app.delete("/user/:id", async (req, res) => {
       try {
@@ -532,6 +557,35 @@ async function run() {
         const updateData = {
           $set: {
             orderStatus: "approved",
+            orderApproveAt: new Date(),
+          },
+        };
+
+        const result = await buyerCollection.updateOne(query, updateData);
+
+        //
+        res.status(200).send({
+          message: "Successfully Updated",
+          success: true,
+          data: result,
+        });
+      } catch (error) {
+        console.log(error);
+        res.send({ message: "Server Error" });
+      }
+    });
+
+    app.patch("/order-completed/:id", async (req, res) => {
+      const id = req.params;
+
+      try {
+        const query = { _id: new ObjectId(id) };
+
+        // Update
+        const updateData = {
+          $set: {
+            orderStatus: "completed",
+            orderCompleteAt: new Date(),
           },
         };
 
@@ -693,13 +747,11 @@ async function run() {
         const result = await buyerCollection.findOne(query);
 
         //
-        res
-          .status(200)
-          .send({
-            message: "Successfully Fetch Order",
-            success: true,
-            data: result,
-          });
+        res.status(200).send({
+          message: "Successfully Fetch Order",
+          success: true,
+          data: result,
+        });
 
         //
       } catch (error) {
@@ -870,7 +922,42 @@ async function run() {
       }
     });
 
-    //
+    // Contact us From message get By email Api
+    app.post("/send-message", async (req, res) => {
+      const { userName, email, contactNumber, message } = req.body;
+
+      try {
+        const transporter = nodemailer.createTransport({
+          service: "gmail",
+          auth: {
+            user: "szzadkhan753@gmail.com",
+            pass: "YOUR_GMAIL_APP_PASSWORD",
+          },
+        });
+
+        await transporter.sendMail({
+          from: email,
+          to: "szzadkhan753@gmail.com",
+          subject: "New Contact Message",
+          html: `
+        <h3>New Message Received</h3>
+        <p><strong>Name:</strong> ${userName}</p>
+        <p><strong>Email:</strong> ${email}</p>
+        <p><strong>Contact:</strong> ${contactNumber}</p>
+        <p><strong>Message:</strong></p>
+        <p>${message}</p>
+      `,
+        });
+
+        res.status(200).json({ success: true });
+        //
+      } catch (error) {
+        console.error(error);
+        res.status(500).json({ success: false });
+      }
+    });
+
+    // Server Successfully working message
     app.listen(port, () => {
       console.log(`Example app listening on port ${port}`);
     });
